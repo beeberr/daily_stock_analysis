@@ -290,11 +290,19 @@ async def app_lifespan(app: FastAPI):
         runtime_scheduler=app.state.runtime_scheduler_service,
     )
     _schedule_stock_index_background_refresh(app, "startup")
-    # 名称解析器的 AkShare 缓存预热：命中磁盘缓存则零网络加载，否则发起
-    # 后台单飞拉取。把冷启动等待从首个用户请求挪到进程启动窗口。
-    from src.services.name_to_code_resolver import warmup_akshare_cache
+    # AkShare imports pandas and a large crawler dependency tree in a child process.
+    # On memory-constrained web instances this background warmup can exceed the
+    # container limit immediately after startup. Keep it enabled by default, but
+    # allow small hosted deployments to disable it and use the local stock map.
+    disable_akshare_warmup = os.getenv("DSA_DISABLE_AKSHARE_WARMUP", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    if not disable_akshare_warmup:
+        from src.services.name_to_code_resolver import warmup_akshare_cache
 
-    warmup_akshare_cache()
+        warmup_akshare_cache()
+    else:
+        logger.info("[NameResolver] AkShare startup warmup disabled by DSA_DISABLE_AKSHARE_WARMUP")
     try:
         yield
     finally:
