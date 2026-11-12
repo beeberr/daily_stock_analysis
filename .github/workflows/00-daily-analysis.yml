@@ -580,8 +580,8 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         run: |
           set -euo pipefail
-          git fetch origin engine-results
-          git worktree add /tmp/engine-results engine-results
+          git fetch origin engine-results:refs/remotes/origin/engine-results
+          git worktree add --detach /tmp/engine-results origin/engine-results
           rm -rf /tmp/engine-results/reports
           mkdir -p /tmp/engine-results/reports
           if [ -d reports ]; then
