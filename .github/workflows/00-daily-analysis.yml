@@ -576,7 +576,6 @@ jobs:
       - name: Publish latest reports for Stock ScanNet Pro
         if: always()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JOB_STATUS: ${{ job.status }}
         run: |
           set -euo pipefail
@@ -611,7 +610,7 @@ jobs:
               "status": os.environ.get("JOB_STATUS", "unknown"),
               "files": files
           }
-          (root / "latest.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+          (root / "latest.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
           PY
           cd /tmp/engine-results
           git config user.name "github-actions[bot]"
