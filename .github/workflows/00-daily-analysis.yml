@@ -1,6 +1,10 @@
 name: 每日股票分析
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/00-daily-analysis.yml'
   # 定时触发 - 每天北京时间 18:00 (UTC 10:00)
   schedule:
     - cron: '0 10 * * 1-5'     # 周一到周五，UTC 10:00 = 北京时间 18:00
@@ -24,6 +28,9 @@ on:
         type: boolean
 
 # 并发控制：同一时间只运行一个分析任务
+permissions:
+  contents: write
+
 concurrency:
   group: stock-analysis
   cancel-in-progress: false
@@ -570,6 +577,45 @@ jobs:
             logs/
           retention-days: 30
       
+      - name: Publish latest report metadata for Stock ScanNet Pro
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          git fetch origin engine-results:refs/remotes/origin/engine-results
+          git worktree add --detach /tmp/engine-results origin/engine-results
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          root = Path("/tmp/engine-results")
+          report_dir = Path("reports")
+          report_count = sum(1 for p in report_dir.rglob("*") if p.is_file()) if report_dir.exists() else 0
+          payload = {
+              "schema_version": 1,
+              "engine": "daily_stock_analysis",
+              "updated_at": datetime.now(timezone.utc).isoformat(),
+              "run_id": os.environ.get("GITHUB_RUN_ID"),
+              "run_number": os.environ.get("GITHUB_RUN_NUMBER"),
+              "status": os.environ.get("JOB_STATUS", "unknown"),
+              "report_count": report_count,
+              "artifact_name": "analysis-reports-" + os.environ.get("GITHUB_RUN_NUMBER", "latest"),
+              "run_url": "https://github.com/" + os.environ.get("GITHUB_REPOSITORY", "beeberr/daily_stock_analysis") + "/actions/runs/" + os.environ.get("GITHUB_RUN_ID", "")
+          }
+          (root / "latest.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          PY
+          cd /tmp/engine-results
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add latest.json
+          if git diff --cached --quiet; then
+            echo "No metadata changes to publish."
+            exit 0
+          fi
+          git commit -m "publish DSA run metadata ${GITHUB_RUN_NUMBER}"
+          git push origin HEAD:engine-results
+
       - name: 显示运行结果
         if: always()
         run: |
