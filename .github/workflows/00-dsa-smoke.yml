@@ -1,0 +1,46 @@
+name: DSA one-time smoke test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "run-dsa-once.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Fetch live market data (dry run, no AI and no notifications)
+        env:
+          LOG_LEVEL: INFO
+          MAX_WORKERS: "1"
+          STOCK_LIST: AAPL
+        run: |
+          mkdir -p reports logs
+          python main.py --dry-run --stocks AAPL --no-notify --no-market-review
+      - name: Upload logs and reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: dsa-smoke-test-${{ github.run_number }}
+          path: |
+            reports/
+            logs/
+          if-no-files-found: warn
+          retention-days: 7
