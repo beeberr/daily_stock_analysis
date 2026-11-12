@@ -24,6 +24,9 @@ on:
         type: boolean
 
 # 并发控制：同一时间只运行一个分析任务
+permissions:
+  contents: write
+
 concurrency:
   group: stock-analysis
   cancel-in-progress: false
@@ -570,6 +573,57 @@ jobs:
             logs/
           retention-days: 30
       
+      - name: Publish latest reports for Stock ScanNet Pro
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          git fetch origin engine-results
+          git worktree add /tmp/engine-results engine-results
+          rm -rf /tmp/engine-results/reports
+          mkdir -p /tmp/engine-results/reports
+          if [ -d reports ]; then
+            find reports -maxdepth 3 -type f -print0 | while IFS= read -r -d '' file; do
+              mkdir -p "/tmp/engine-results/reports/$(dirname "${file#reports/}")"
+              cp "$file" "/tmp/engine-results/reports/${file#reports/}"
+            done
+          fi
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path("/tmp/engine-results")
+          reports = root / "reports"
+          files = []
+          for path in sorted(p for p in reports.rglob("*") if p.is_file()):
+              files.append({
+                  "name": path.name,
+                  "path": path.relative_to(root).as_posix(),
+                  "size_bytes": path.stat().st_size
+              })
+          payload = {
+              "schema_version": 1,
+              "engine": "daily_stock_analysis",
+              "updated_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+              "run_id": os.environ.get("GITHUB_RUN_ID"),
+              "run_number": os.environ.get("GITHUB_RUN_NUMBER"),
+              "status": os.environ.get("JOB_STATUS", "unknown"),
+              "files": files
+          }
+          (root / "latest.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+          PY
+          cd /tmp/engine-results
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No report changes to publish."
+            exit 0
+          fi
+          git commit -m "publish DSA reports for run ${GITHUB_RUN_NUMBER}"
+          git push origin HEAD:engine-results
+
       - name: 显示运行结果
         if: always()
         run: |
