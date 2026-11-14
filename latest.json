@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "engine": "daily_stock_analysis",
-  "updated_at": "2026-11-14T16:48:22.122100+00:00",
-  "run_id": "43617467866",
-  "run_number": "6",
+  "updated_at": "2026-11-14T16:55:07.538082+00:00",
+  "run_id": "43617571681",
+  "run_number": "8",
   "status": "success",
-  "report_count": 0,
-  "artifact_name": "analysis-reports-6",
-  "run_url": "https://github.com/beeberr/daily_stock_analysis/actions/runs/43617467866"
+  "report_count": 2,
+  "artifact_name": "analysis-reports-8",
+  "run_url": "https://github.com/beeberr/daily_stock_analysis/actions/runs/43617571681"
 }
