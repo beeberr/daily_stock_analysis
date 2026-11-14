@@ -1,0 +1,28 @@
+name: DSA Engine - Standalone Activation
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Analysis mode"
+        required: true
+        type: choice
+        options: [full, stocks-only, market-only]
+        default: full
+      force_run:
+        description: "Run even when the market calendar says closed"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  activate-dsa:
+    name: Run DSA independently
+    uses: ./.github/workflows/00-daily-analysis.yml
+    with:
+      mode: ${{ inputs.mode }}
+      force_run: ${{ inputs.force_run }}
+    secrets: inherit
