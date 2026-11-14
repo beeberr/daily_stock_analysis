@@ -1,6 +1,18 @@
 name: 每日股票分析
 
 on:
+  workflow_call:
+    inputs:
+      mode:
+        description: '运行模式'
+        required: false
+        type: string
+        default: 'full'
+      force_run:
+        description: '强制运行（跳过交易日检查）'
+        required: false
+        type: boolean
+        default: true
   push:
     branches: [main]
     paths:
