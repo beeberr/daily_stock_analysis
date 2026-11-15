@@ -595,7 +595,7 @@ jobs:
           if not keys:
               raise SystemExit("Hebrew report translation requires GEMINI_API_KEY or GEMINI_API_KEYS.")
           model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-          reports = sorted(Path("reports").rglob("*.md"))
+          reports = sorted(p for p in Path("reports").rglob("*.md") if not p.name.endswith(".he.md"))
           if not reports:
               print("No Markdown reports to translate.")
               raise SystemExit(0)
@@ -609,7 +609,7 @@ jobs:
                   "and tickers in their original form, optionally adding Hebrew explanations. "
                   "Return only the translated Markdown.\n\n" + source
               )
-              payload = {"contents":[{"parts":[{"text":prompt}]}], "generationConfig":{"temperature":0.1}}
+              payload = {"contents":[{"parts":[{"text":prompt}]}], "generationConfig":{"temperature":0.1,"maxOutputTokens":8192}}
               request = urllib.request.Request(
                   f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={keys[0]}",
                   data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
