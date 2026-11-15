@@ -579,6 +579,53 @@ jobs:
             python main.py $FORCE_RUN_ARG
           fi
       
+      - name: Translate reports to Hebrew
+        if: always()
+        continue-on-error: true
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL || 'gemini-2.5-flash' }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          from pathlib import Path
+
+          keys = [x.strip() for x in (os.getenv("GEMINI_API_KEY", "") + "," + os.getenv("GEMINI_API_KEYS", "")).replace(";", ",").split(",") if x.strip()]
+          if not keys:
+              raise SystemExit("Hebrew report translation requires GEMINI_API_KEY or GEMINI_API_KEYS.")
+          model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+          reports = sorted(Path("reports").rglob("*.md"))
+          if not reports:
+              print("No Markdown reports to translate.")
+              raise SystemExit(0)
+          for path in reports:
+              source = path.read_text(encoding="utf-8")
+              prompt = (
+                  "Translate the following complete stock-market report into clear, professional Hebrew. "
+                  "Preserve Markdown structure, every number, ticker, company name, currency, date, URL, "
+                  "formula, table value and source citation exactly. Do not add analysis, recommendations, "
+                  "or facts. Translate headings, explanations, labels and prose. Keep stock/company names "
+                  "and tickers in their original form, optionally adding Hebrew explanations. "
+                  "Return only the translated Markdown.\n\n" + source
+              )
+              payload = {"contents":[{"parts":[{"text":prompt}]}], "generationConfig":{"temperature":0.1}}
+              request = urllib.request.Request(
+                  f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={keys[0]}",
+                  data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                  headers={"Content-Type":"application/json"},
+                  method="POST",
+              )
+              with urllib.request.urlopen(request, timeout=180) as response:
+                  result = json.loads(response.read().decode("utf-8"))
+              translated = "".join(part.get("text","") for part in result["candidates"][0]["content"]["parts"]).strip()
+              if not translated:
+                  raise RuntimeError(f"Empty Hebrew translation for {path}")
+              target = path.with_name(path.stem + ".he.md")
+              target.write_text(translated + "\n", encoding="utf-8")
+              print(f"Hebrew report created: {target}")
+          PY
+
       - name: 上传分析报告
         uses: actions/upload-artifact@v6
         if: always()
@@ -598,21 +645,35 @@ jobs:
           git fetch origin engine-results:refs/remotes/origin/engine-results
           git worktree add --detach /tmp/engine-results origin/engine-results
           python - <<'PY'
-          import json, os
+          import json, os, shutil
           from datetime import datetime, timezone
           from pathlib import Path
           root = Path("/tmp/engine-results")
-          report_dir = Path("reports")
-          report_count = sum(1 for p in report_dir.rglob("*") if p.is_file()) if report_dir.exists() else 0
+          run_number = os.environ.get("GITHUB_RUN_NUMBER", "latest")
+          source_dir = Path("reports")
+          target_dir = root / "reports" / run_number
+          target_dir.mkdir(parents=True, exist_ok=True)
+          translated = sorted(source_dir.rglob("*.he.md")) if source_dir.exists() else []
+          published = []
+          for source in translated:
+              target = target_dir / source.name
+              shutil.copy2(source, target)
+              published.append({
+                  "name": source.name.replace(".he.md", "").replace("_", " "),
+                  "path": f"reports/{run_number}/{source.name}",
+                  "url": "https://github.com/" + os.environ.get("GITHUB_REPOSITORY", "beeberr/daily_stock_analysis") + f"/blob/engine-results/reports/{run_number}/{source.name}"
+              })
           payload = {
-              "schema_version": 1,
+              "schema_version": 2,
               "engine": "daily_stock_analysis",
               "updated_at": datetime.now(timezone.utc).isoformat(),
               "run_id": os.environ.get("GITHUB_RUN_ID"),
-              "run_number": os.environ.get("GITHUB_RUN_NUMBER"),
+              "run_number": run_number,
               "status": os.environ.get("JOB_STATUS", "unknown"),
-              "report_count": report_count,
-              "artifact_name": "analysis-reports-" + os.environ.get("GITHUB_RUN_NUMBER", "latest"),
+              "report_count": len(published),
+              "reports": published,
+              "translation_language": "he",
+              "artifact_name": "analysis-reports-" + run_number,
               "run_url": "https://github.com/" + os.environ.get("GITHUB_REPOSITORY", "beeberr/daily_stock_analysis") + "/actions/runs/" + os.environ.get("GITHUB_RUN_ID", "")
           }
           (root / "latest.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -620,7 +681,7 @@ jobs:
           cd /tmp/engine-results
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add latest.json
+          git add latest.json reports/
           if git diff --cached --quiet; then
             echo "No metadata changes to publish."
             exit 0
