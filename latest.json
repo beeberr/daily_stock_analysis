@@ -7,5 +7,18 @@
   "status": "success",
   "report_count": 2,
   "artifact_name": "analysis-reports-1",
-  "run_url": "https://github.com/beeberr/daily_stock_analysis/actions/runs/43617620623"
+  "run_url": "https://github.com/beeberr/daily_stock_analysis/actions/runs/43617620623",
+  "translation_language": "he",
+  "reports": [
+    {
+      "name": "דוח ניתוח מניה — Kweichow Moutai (600519)",
+      "path": "reports/1/report_20261114.he.md",
+      "url": "https://github.com/beeberr/daily_stock_analysis/blob/engine-results/reports/1/report_20261114.he.md"
+    },
+    {
+      "name": "סקירת שוק — 14.11.2026",
+      "path": "reports/1/market_review_20261114.he.md",
+      "url": "https://github.com/beeberr/daily_stock_analysis/blob/engine-results/reports/1/market_review_20261114.he.md"
+    }
+  ]
 }
