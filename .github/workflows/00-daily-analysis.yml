@@ -580,12 +580,14 @@ jobs:
           fi
       
       - name: Translate reports to Hebrew
+        id: translate
         if: always()
         continue-on-error: true
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL || 'gemini-2.5-flash' }}
+          GEMINI_MODEL_FALLBACK: ${{ vars.GEMINI_MODEL_FALLBACK || secrets.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash-lite' }}
         run: |
           python - <<'PY'
           import json, os, urllib.request
@@ -594,11 +596,32 @@ jobs:
           keys = [x.strip() for x in (os.getenv("GEMINI_API_KEY", "") + "," + os.getenv("GEMINI_API_KEYS", "")).replace(";", ",").split(",") if x.strip()]
           if not keys:
               raise SystemExit("Hebrew report translation requires GEMINI_API_KEY or GEMINI_API_KEYS.")
-          model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+          preferred_models = []
+          for value in (os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), os.getenv("GEMINI_MODEL_FALLBACK", "gemini-2.5-flash-lite"), "gemini-2.0-flash", "gemini-2.0-flash-lite"):
+              name = value.strip().removeprefix("models/")
+              if name and name not in preferred_models:
+                  preferred_models.append(name)
+
+          def available_models(api_key):
+              url = "https://generativelanguage.googleapis.com/v1beta/models?key=" + api_key
+              try:
+                  request = urllib.request.Request(url, headers={"Accept": "application/json"})
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      payload = json.loads(response.read().decode("utf-8"))
+                  return {
+                      item.get("name", "").removeprefix("models/")
+                      for item in payload.get("models", [])
+                      if "generateContent" in item.get("supportedGenerationMethods", [])
+                  }
+              except Exception as exc:
+                  print(f"Could not discover Gemini models for one key ({type(exc).__name__}); using configured fallbacks.")
+                  return set()
+
           reports = sorted(p for p in Path("reports").rglob("*.md") if not p.name.endswith(".he.md"))
           if not reports:
               print("No Markdown reports to translate.")
               raise SystemExit(0)
+
           for path in reports:
               source = path.read_text(encoding="utf-8")
               prompt = (
@@ -610,17 +633,37 @@ jobs:
                   "Return only the translated Markdown.\n\n" + source
               )
               payload = {"contents":[{"parts":[{"text":prompt}]}], "generationConfig":{"temperature":0.1,"maxOutputTokens":8192}}
-              request = urllib.request.Request(
-                  f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={keys[0]}",
-                  data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                  headers={"Content-Type":"application/json"},
-                  method="POST",
-              )
-              with urllib.request.urlopen(request, timeout=180) as response:
-                  result = json.loads(response.read().decode("utf-8"))
-              translated = "".join(part.get("text","") for part in result["candidates"][0]["content"]["parts"]).strip()
+              translated = ""
+              failures = []
+              for key in keys:
+                  available = available_models(key)
+                  models = [model for model in preferred_models if not available or model in available]
+                  discovered_flash = sorted(model for model in available if "flash" in model.lower() and model not in models)
+                  models.extend(discovered_flash)
+                  if available:
+                      models.extend(sorted(model for model in available if model not in models))
+                  for model in models:
+                      try:
+                          request = urllib.request.Request(
+                              f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
+                              data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                              headers={"Content-Type":"application/json"},
+                              method="POST",
+                          )
+                          with urllib.request.urlopen(request, timeout=180) as response:
+                              result = json.loads(response.read().decode("utf-8"))
+                          candidate = result.get("candidates", [{}])[0]
+                          translated = "".join(part.get("text", "") for part in candidate.get("content", {}).get("parts", [])).strip()
+                          if not translated or not any("\u0590" <= char <= "\u05ff" for char in translated):
+                              raise RuntimeError("response was empty or contained no Hebrew text")
+                          print(f"Hebrew report created with {model}: {path}")
+                          break
+                      except Exception as exc:
+                          failures.append(f"{model}: {type(exc).__name__}: {str(exc)[:180]}")
+                  if translated:
+                      break
               if not translated:
-                  raise RuntimeError(f"Empty Hebrew translation for {path}")
+                  raise RuntimeError(f"Hebrew translation failed for {path}: " + " | ".join(failures[-8:]))
               target = path.with_name(path.stem + ".he.md")
               target.write_text(translated + "\n", encoding="utf-8")
               print(f"Hebrew report created: {target}")
@@ -640,6 +683,7 @@ jobs:
         if: always()
         env:
           JOB_STATUS: ${{ job.status }}
+          TRANSLATION_STATUS: ${{ steps.translate.outcome }}
         run: |
           set -euo pipefail
           git fetch origin engine-results:refs/remotes/origin/engine-results
@@ -673,6 +717,7 @@ jobs:
               "report_count": len(published),
               "reports": published,
               "translation_language": "he",
+              "translation_status": os.environ.get("TRANSLATION_STATUS", "unknown"),
               "artifact_name": "analysis-reports-" + run_number,
               "run_url": "https://github.com/" + os.environ.get("GITHUB_REPOSITORY", "beeberr/daily_stock_analysis") + "/actions/runs/" + os.environ.get("GITHUB_RUN_ID", "")
           }
@@ -681,7 +726,10 @@ jobs:
           cd /tmp/engine-results
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add latest.json reports/
+          git add latest.json
+          if find reports -type f -print -quit | grep -q .; then
+            git add -f reports/
+          fi
           if git diff --cached --quiet; then
             echo "No metadata changes to publish."
             exit 0
