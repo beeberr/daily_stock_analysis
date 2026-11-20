@@ -234,3 +234,16 @@ def test_browser_fixture_and_default_smoke_entrypoints_stay_separate() -> None:
     default = next(step for step in steps if step.get("run") == "npm run test:smoke")
     assert default["env"]["DSA_WEB_SMOKE_PASSWORD"] == ""
     assert any(step.get("run") == "npx playwright test --config playwright.fixture.config.ts" for step in steps)
+
+
+
+def test_daily_report_workflow_retries_gemini_models_and_stages_ignored_reports() -> None:
+    workflow = _workflow(".github/workflows/00-daily-analysis.yml")
+    steps = workflow["jobs"]["analyze"]["steps"]
+    translation = next(step for step in steps if step.get("name") == "Translate reports to Hebrew")
+    publication = next(step for step in steps if step.get("name") == "Publish latest report metadata for Stock ScanNet Pro")
+
+    assert "GEMINI_MODEL_FALLBACK" in translation["env"]
+    assert "available_models" in translation["run"]
+    assert "generateContent" in translation["run"]
+    assert "git add -f reports/" in publication["run"]
