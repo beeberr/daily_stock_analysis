@@ -243,7 +243,11 @@ def test_daily_report_workflow_retries_gemini_models_and_stages_ignored_reports(
     translation = next(step for step in steps if step.get("name") == "Translate reports to Hebrew")
     publication = next(step for step in steps if step.get("name") == "Publish latest report metadata for Stock ScanNet Pro")
 
+    assert translation["id"] == "translate"
     assert "GEMINI_MODEL_FALLBACK" in translation["env"]
     assert "available_models" in translation["run"]
     assert "generateContent" in translation["run"]
+    assert "TRANSLATION_STATUS" in publication["env"]
+    assert "steps.translate.outcome" in publication["env"]["TRANSLATION_STATUS"]
     assert "git add -f reports/" in publication["run"]
+    assert "find reports -type f -print -quit" in publication["run"]
