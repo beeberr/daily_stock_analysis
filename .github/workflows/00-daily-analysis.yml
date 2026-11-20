@@ -580,6 +580,7 @@ jobs:
           fi
       
       - name: Translate reports to Hebrew
+        id: translate
         if: always()
         continue-on-error: true
         env:
@@ -682,6 +683,7 @@ jobs:
         if: always()
         env:
           JOB_STATUS: ${{ job.status }}
+          TRANSLATION_STATUS: ${{ steps.translate.outcome }}
         run: |
           set -euo pipefail
           git fetch origin engine-results:refs/remotes/origin/engine-results
@@ -715,6 +717,7 @@ jobs:
               "report_count": len(published),
               "reports": published,
               "translation_language": "he",
+              "translation_status": os.environ.get("TRANSLATION_STATUS", "unknown"),
               "artifact_name": "analysis-reports-" + run_number,
               "run_url": "https://github.com/" + os.environ.get("GITHUB_REPOSITORY", "beeberr/daily_stock_analysis") + "/actions/runs/" + os.environ.get("GITHUB_RUN_ID", "")
           }
