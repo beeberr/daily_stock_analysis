@@ -629,7 +629,7 @@ jobs:
                   "formula, table value and source citation exactly. Do not add analysis, recommendations, "
                   "or facts. Translate headings, explanations, labels and prose. Keep stock/company names "
                   "and tickers in their original form, optionally adding Hebrew explanations. "
-                  "Return only the translated Markdown.\\n\\n" + source
+                  "Return only the translated Markdown.\n\n" + source
               )
               payload = {"contents":[{"parts":[{"text":prompt}]}], "generationConfig":{"temperature":0.1,"maxOutputTokens":8192}}
               translated = ""
@@ -653,7 +653,7 @@ jobs:
                               result = json.loads(response.read().decode("utf-8"))
                           candidate = result.get("candidates", [{}])[0]
                           translated = "".join(part.get("text", "") for part in candidate.get("content", {}).get("parts", [])).strip()
-                          if not translated or not any("\\u0590" <= char <= "\\u05ff" for char in translated):
+                          if not translated or not any("\u0590" <= char <= "\u05ff" for char in translated):
                               raise RuntimeError("response was empty or contained no Hebrew text")
                           print(f"Hebrew report created with {model}: {path}")
                           break
@@ -664,7 +664,7 @@ jobs:
               if not translated:
                   raise RuntimeError(f"Hebrew translation failed for {path}: " + " | ".join(failures[-8:]))
               target = path.with_name(path.stem + ".he.md")
-              target.write_text(translated + "\\n", encoding="utf-8")
+              target.write_text(translated + "\n", encoding="utf-8")
               print(f"Hebrew report created: {target}")
           PY
 
